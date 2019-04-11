@@ -1,0 +1,174 @@
+
+#include <SoftwareSerial.h>
+
+
+SoftwareSerial gsm(6, 7); // RX, TX
+//rx of arduino is connected to tx of gsm
+//tx of arduino is connected to rx of gsm
+
+String alertNumber= "+35877019159";
+//analog pins to read in accelerometer values
+int pinX=1; //connect to X-axis output of adxl
+int pinY=2; //connect to Y-axis output of adxl
+int pinZ=3; //connect to Z-axis output of adxl
+
+//raw accelerometer readings
+int rawX=0;
+int rawY=0;
+int rawZ=0;
+
+//real acceleration readings in g
+float accX;//acceleration along x-axis in g
+float accZ;//acceleration along y-axis in g
+float accY;//acceleration along z-axis in g
+float accR;//resultant acceleration in g
+
+unsigned long lowTime=0;//time when we have a value of R approaching zero
+unsigned long highTime=0;//time when we have a value of R over the higher threshold for a fall
+float highR=2.0;//higher fall value threshold
+float lowR=0.8;//lower fall value threshold
+
+bool trig = false; //trigger condition was met
+unsigned long prevTrigTime=0; //the last time trigger condition was met
+float prevAccR=1.0;//previous resultant acceleration 
+
+void setup() {
+   //delay(3000);
+  //the adxl335 is a 3.3v device
+  //thus we will set our analog reference to 3.3v instead of 5v
+  //connect the arduino's aref pin to 3.3v pin
+  analogReference(EXTERNAL);//this will reset the analog reference to 3.3v
+
+  pinMode(13,OUTPUT);
+  //start serial. set the baudrate to 9600
+  Serial.begin(9600);
+ 
+  //GSM
+  // set the gsm serial baudrate to 9600
+  gsm.begin(9600);
+  //allow some time for GSM to initialize
+  delay(3000);
+  //to initialize the auto baude rate detection of GSM
+   gsm.println("AT");
+   updateGSM();
+   delay(1000);
+  //set GSM to text mode
+   gsm.println("AT+CMGF=1");
+   updateGSM();
+   
+}//end setup
+
+void loop() {
+
+  
+  // put your main code here, to run repeatedly:
+  //take analog readings from the accelerometer
+  readAdxl();
+  calculateAcc();//convert the accelerometer readings to g
+  //write the readings to the serial output
+  Serial.print(accX);
+  Serial.print("\t");
+  Serial.print(accY);
+  Serial.print("\t");
+  Serial.print(accZ);
+  Serial.print("\t");
+  Serial.println(accR);
+
+
+  
+  
+  //try to detect fall conditions
+  detectFall();
+
+  //test for a proper fall
+  if(  ( (millis()-prevTrigTime) >= 4000 ) && (trig == true) )
+  {
+    digitalWrite(13, HIGH);//indicator light goes on
+
+    //disable trigger
+    trig = false;
+    //sendAlert();//send text messge to alert number
+    
+  }//end if
+    //set previous reultant acceleration
+    prevAccR = accR;
+
+  //wait for a while
+  delay(20);
+  
+}
+
+void readAdxl()
+{
+  rawX= analogRead(pinX);
+  rawY= analogRead(pinY);
+  rawZ= analogRead(pinZ);
+  
+}
+
+void calculateAcc()
+{
+  accX= mapFloat(rawX, 0, 1023, -3, 3);
+  //raw X is the analog input reading, 0 and 1023 are the minimum and maximu analog readings, which correspond to -3g and +3g
+  //which are the minimum and maximum acceleration readings on adxl335
+  accY= mapFloat(rawY, 0, 1023, -3, 3);
+  accZ= mapFloat(rawZ, 0, 1023, -3, 3);
+  accR= sqrt(pow(accX,2) + pow(accY,2) + pow(accZ,2) );
+}
+
+float mapFloat(float val, float fromL, float fromH, float toL, float toH)
+{
+  return toL + (val-fromL) *(toH - toL)/(fromH-fromL);
+}
+
+void detectFall(){
+  //test for lowR
+  if((accR < lowR) && (prevAccR < 100.0))//test for the lower value
+  {
+    lowTime = millis();//set the time in milliseconds
+  }//test for lower threshold
+  
+  else if(accR > highR) //test for highR
+  {
+    highTime = millis();//set the time in milliseconds
+  }//test for higher threshold
+
+    //check the difference between the times
+    unsigned long timeDiff = abs(highTime- lowTime);
+    if ((timeDiff < 500) && (highTime != 0) && (lowTime != 0) )//trigger condition met
+    {
+      //get current time
+      unsigned long presentTime = millis();
+      //test to see how far it is from previous trigger
+      if( (presentTime - prevTrigTime) < 3000)
+      {
+        trig = false;//it's a run too close
+        }
+      else{
+        trig = true;//it's a fall
+        }
+      
+      prevTrigTime = presentTime;
+      //wait a little
+      delay(1000);
+      
+     }//end if triggered
+     else {}
+  }//end fall detected
+
+  void updateGSM(){
+    delay(1000);
+     while (gsm.available()) {
+    Serial.write(gsm.read());
+  }
+ 
+    }//end update GSM
+  void sendAlert()
+  { 
+    gsm.println("AT+CMGS=\"" + alertNumber + "\"");
+    updateGSM();
+    gsm.println("the user has fallen");
+    delay(100);
+    gsm.println((char)26);
+    updateGSM();
+  }//end send alert
