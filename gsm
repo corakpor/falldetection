@@ -6,7 +6,7 @@ SoftwareSerial gsm(6, 7); // RX, TX
 //rx of arduino is connected to tx of gsm
 //tx of arduino is connected to rx of gsm
 
-String alertNumber= "+35877019159";
+String alertNumber= "+358XXXXXX";
 //analog pins to read in accelerometer values
 int pinX=1; //connect to X-axis output of adxl
 int pinY=2; //connect to Y-axis output of adxl
